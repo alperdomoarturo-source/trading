@@ -1,16 +1,21 @@
 import { getCandles, isValidInterval } from "@/lib/market";
+import { INTERVAL_MS } from "@/lib/market/types";
 import { evaluateCurrentSignal } from "@/lib/signals/engine";
 import { DEFAULT_CONFIG } from "@/lib/config/defaults";
 import { BadRequestError, jsonError, parseInterval, parseSymbol } from "@/lib/validation";
 import { SIGNAL_LABELS } from "@/lib/signals/types";
-
+import { decideVerdict } from "@/lib/signals/verdict";
+import { estimateTrendDuration } from "@/lib/simulation/duration";
+import { loadModel, predictWithModel } from "@/lib/ml/inference";
+import type { PredictionProbabilities } from "@/lib/ml/types";
+import type { SymbolOverview } from "@/lib/client/api-types";
 
 const MAX_SYMBOLS = 10;
 
 /**
  * GET /api/signals?symbols=BTCUSDT,ETHUSDT&interval=1h
- * Señal explicables actual para cada símbolo. Sin symbols, usa la vigilancia
- * por defecto.
+ * Señal explicables + veredicto direccional (reglas y/o ML) + ventana temporal
+ * estimada de la tendencia, para cada símbolo de la vigilancia.
  */
 export async function GET(request: Request) {
   try {
@@ -25,7 +30,7 @@ export async function GET(request: Request) {
       : DEFAULT_CONFIG.watchlist.slice(0, MAX_SYMBOLS);
 
     const results = await Promise.allSettled(
-      symbols.map(async (symbol) => {
+      symbols.map(async (symbol): Promise<SymbolOverview> => {
         const series = await getCandles(symbol, interval, 500);
         const signal = evaluateCurrentSignal(series.candles, DEFAULT_CONFIG.signals, {
           symbol,
@@ -33,11 +38,59 @@ export async function GET(request: Request) {
           interval,
           freshness: series.meta.freshness,
         });
-        return { symbol, label: SIGNAL_LABELS[signal.kind], signal };
+
+        let probabilities: PredictionProbabilities | null = null;
+        let horizon: number | null = null;
+        let mlMessage: string | null = null;
+        const model = loadModel(symbol, interval);
+        if (!model) {
+          mlMessage = `Sin modelo ML entrenado para ${symbol} ${interval}; entrena con ml/train.py.`;
+        } else if (model.validityStatus !== "valid") {
+          mlMessage = `El modelo de ${symbol} ${interval} no superó al baseline fuera de muestra (${model.validityStatus}).`;
+        } else {
+          const result = predictWithModel(
+            series.candles,
+            model,
+            { freshness: series.meta.freshness, fetchedAt: series.meta.fetchedAt },
+            symbol,
+            interval,
+          );
+          if (result.available) {
+            probabilities = result.probabilities;
+            horizon = result.horizon;
+          } else {
+            mlMessage = result.message;
+          }
+        }
+
+        const verdict = decideVerdict({
+          signalKind: signal.kind,
+          score: signal.score,
+          probabilities,
+          mlMessage,
+        });
+        const intervalMs = INTERVAL_MS[interval] ?? 3_600_000;
+        const trendWindow = verdict.direction
+          ? estimateTrendDuration({
+              candles: series.candles,
+              direction: verdict.direction,
+              intervalMs,
+              horizonCandles: horizon,
+            })
+          : null;
+
+        return {
+          symbol,
+          label: SIGNAL_LABELS[signal.kind],
+          signal,
+          verdict,
+          prediction: probabilities && horizon !== null ? { probabilities, horizon } : null,
+          trendWindow,
+        };
       }),
     );
 
-    const signals = results.map((r, i) =>
+    const signals: SymbolOverview[] = results.map((r, i) =>
       r.status === "fulfilled"
         ? r.value
         : {
@@ -66,6 +119,9 @@ export async function GET(request: Request) {
               warnings: [],
               validUntil: 0,
             },
+            verdict: decideVerdict({ signalKind: "DATA_ERROR", probabilities: null }),
+            prediction: null,
+            trendWindow: null,
           },
     );
 

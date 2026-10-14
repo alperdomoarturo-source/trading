@@ -220,7 +220,7 @@ export default function SignalsCenterPage() {
 
       <div className="grid gap-3 xl:grid-cols-2">
         {signals.map((s) => (
-          <SignalCard key={s.symbol} signal={s.signal} />
+          <SignalCard key={s.symbol} signal={s.signal} verdict={s.verdict} trendWindow={s.trendWindow} />
         ))}
       </div>
 

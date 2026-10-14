@@ -1,5 +1,7 @@
 import { Badge } from "@/components/ui";
 import { SIGNAL_LABELS, type Signal } from "@/lib/signals/types";
+import type { Verdict } from "@/lib/signals/verdict";
+import { describeTrendWindow, type TrendDurationEstimate } from "@/lib/simulation/duration";
 import { fmtDateTime, fmtPercent, fmtPrice, timeAgo } from "@/lib/format";
 
 const TONES: Record<Signal["kind"], "up" | "down" | "warning" | "accent" | "neutral"> = {
@@ -23,7 +25,17 @@ export function ScoreBar({ score }: { score: number }) {
   );
 }
 
-export function SignalCard({ signal, compact = false }: { signal: Signal; compact?: boolean }) {
+export function SignalCard({
+  signal,
+  compact = false,
+  verdict,
+  trendWindow,
+}: {
+  signal: Signal;
+  compact?: boolean;
+  verdict?: Verdict;
+  trendWindow?: TrendDurationEstimate | null;
+}) {
   const tone = TONES[signal.kind];
   return (
     <div className="rounded-lg border border-border-subtle bg-surface p-4">
@@ -37,6 +49,22 @@ export function SignalCard({ signal, compact = false }: { signal: Signal; compac
           {fmtDateTime(signal.candleTime)} · {timeAgo(signal.candleTime)}
         </div>
       </div>
+
+      {verdict && (
+        <div className="mt-3 rounded-md border border-border-subtle bg-surface-2/40 p-2.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge tone={verdict.tone === "up" ? "up" : verdict.tone === "down" ? "down" : "neutral"}>
+              {verdict.label}
+            </Badge>
+            {trendWindow && (
+              <span className="text-[11px] text-muted">
+                {describeTrendWindow(trendWindow, signal.interval)}
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-xs text-muted">{verdict.detail}</p>
+        </div>
+      )}
 
       <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
         <div>
@@ -121,9 +149,9 @@ export function SignalCard({ signal, compact = false }: { signal: Signal; compac
           )}
 
           <p className="mt-3 text-[11px] text-muted">
-            Señal basada en reglas explicables sobre la vela cerrada más reciente. No incluye
-            aún probabilidades del modelo ML (Etapa 4). Rentabilidad pasada no garantiza
-            resultados futuros.
+            Reglas explicables sobre la vela cerrada más reciente; el veredicto de arriba suma
+            además el sesgo del modelo ML cuando hay un modelo validado para este par. Ninguna
+            de las dos cosas es una garantía: rentabilidad pasada no asegura resultados futuros.
           </p>
         </>
       )}

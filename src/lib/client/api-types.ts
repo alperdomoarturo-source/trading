@@ -2,6 +2,9 @@ import type { Candle, CandleSeriesMeta, Market } from "@/lib/market/types";
 import type { DetectedPattern } from "@/lib/analysis/patterns";
 import type { Levels } from "@/lib/analysis/levels";
 import type { Signal } from "@/lib/signals/types";
+import type { Verdict } from "@/lib/signals/verdict";
+import type { TrendDurationEstimate } from "@/lib/simulation/duration";
+import type { PredictionProbabilities } from "@/lib/ml/types";
 import type { AssetInfo } from "@/lib/market/types";
 
 export interface MarketsResponse {
@@ -58,10 +61,20 @@ export interface TickerResponse {
   fetchedAt: number;
 }
 
+/** Por símbolo: señal de reglas + veredicto direccional + ventana de la tendencia. */
+export interface SymbolOverview {
+  symbol: string;
+  label: string;
+  signal: Signal;
+  verdict: Verdict;
+  prediction: { probabilities: PredictionProbabilities; horizon: number } | null;
+  trendWindow: TrendDurationEstimate | null;
+}
+
 export interface SignalsResponse {
   interval: string;
   generatedAt: number;
-  signals: { symbol: string; label: string; signal: Signal }[];
+  signals: SymbolOverview[];
 }
 
 export interface BacktestResponse {

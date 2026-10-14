@@ -8,6 +8,7 @@ import { useApi } from "@/lib/client/hooks";
 import { notifySignal } from "@/lib/client/notifications";
 import { useConfig } from "@/lib/client/settings";
 import type { MarketsResponse, SignalsResponse } from "@/lib/client/api-types";
+import { describeTrendWindow } from "@/lib/simulation/duration";
 import { fmtPrice, timeAgo } from "@/lib/format";
 
 export default function DashboardPage() {
@@ -109,13 +110,15 @@ export default function DashboardPage() {
                   href={`/analysis/${a.symbol}`}
                   className="rounded-lg border border-border-subtle bg-surface-2/40 p-3 transition-colors hover:border-accent"
                 >
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-2">
                     <span className="font-semibold">{a.name ?? a.symbol}</span>
                     {sig && (
                       <Badge
-                        tone={sig.signal.kind === "BUY" ? "up" : sig.signal.kind === "SELL" ? "down" : "neutral"}
+                        tone={
+                          sig.verdict.tone === "up" ? "up" : sig.verdict.tone === "down" ? "down" : "neutral"
+                        }
                       >
-                        {sig.label}
+                        {sig.verdict.label}
                       </Badge>
                     )}
                   </div>
@@ -129,6 +132,13 @@ export default function DashboardPage() {
                       ? `${a.changePercent24h >= 0 ? "+" : ""}${a.changePercent24h.toFixed(2)} % (24 h)`
                       : "sin variación"}
                   </div>
+                  {sig && (
+                    <div className="mt-1 text-[11px] leading-snug text-muted">
+                      {sig.trendWindow
+                        ? describeTrendWindow(sig.trendWindow, signals.data?.interval ?? "")
+                        : sig.verdict.detail}
+                    </div>
+                  )}
                   <div className="mt-1 text-[11px] text-muted font-mono">{a.symbol}</div>
                 </Link>
               );
@@ -154,7 +164,13 @@ export default function DashboardPage() {
         ) : (
           <div className="space-y-3">
             {sigList.slice(0, 4).map((s) => (
-              <SignalCard key={s.symbol} signal={s.signal} compact />
+              <SignalCard
+                key={s.symbol}
+                signal={s.signal}
+                verdict={s.verdict}
+                trendWindow={s.trendWindow}
+                compact
+              />
             ))}
           </div>
         )}

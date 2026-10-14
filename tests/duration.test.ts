@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { estimateTrendDuration } from "@/lib/simulation/duration";
+import { describeTrendWindow, estimateTrendDuration, type TrendDurationEstimate } from "@/lib/simulation/duration";
 import type { Candle } from "@/lib/market/types";
 
 const HOUR = 3_600_000;
@@ -98,5 +98,58 @@ describe("estimateTrendDuration", () => {
     expect(est?.streakCandles).toBe(0);
     expect(est?.runsAnalysed).toBe(12);
     expect(est?.typicalRunRangeCandles).toEqual([1, 1]);
+  });
+});
+
+describe("describeTrendWindow", () => {
+  const base: TrendDurationEstimate = {
+    direction: "up",
+    intervalMs: HOUR,
+    candlesAnalysed: 499,
+    streakCandles: 0,
+    runsAnalysed: 120,
+    medianRunCandles: 2,
+    typicalRunRangeCandles: [1, 3],
+    remainingCandles: [1, 3],
+    remainingMs: [HOUR, 3 * HOUR],
+    exhaustedShare: 0,
+    streakAlreadyTypical: false,
+    horizonCandles: 5,
+    beyondHorizon: false,
+    anchorClosedTime: 0,
+  };
+
+  it("traduce la ventana a velas y a tiempo legible", () => {
+    expect(describeTrendWindow(base, "1h")).toBe("ventana restante ≈ 1–3 velas 1h (1 h–3 h)");
+  });
+
+  it("evita «<1 min» cuando la ventana puede cerrarse en cualquier momento", () => {
+    expect(describeTrendWindow({ ...base, remainingCandles: [0, 3], remainingMs: [0, 3 * HOUR] }, "1h")).toBe(
+      "ventana restante ≈ 0–3 velas 1h (hasta 3 h)",
+    );
+  });
+
+  it("unifica el texto cuando el rango es un solo valor", () => {
+    const four = {
+      ...base,
+      intervalMs: 4 * HOUR,
+      remainingCandles: [2, 2] as [number, number],
+      remainingMs: [8 * HOUR, 8 * HOUR] as [number, number],
+    };
+    expect(describeTrendWindow(four, "4h")).toBe("ventana restante ≈ 2 velas 4h (8 h)");
+  });
+
+  it("avisa cuando la racha ya va más larga que lo típico", () => {
+    const text = describeTrendWindow(
+      { ...base, direction: "down", remainingCandles: [0, 0], streakAlreadyTypical: true, streakCandles: 5 },
+      "1h",
+    );
+    expect(text).toContain("la racha (5 velas 1h) ya duró más que el 75 % de las rachas bajistas");
+    expect(text).toContain("cerca del final");
+  });
+
+  it("marca lo que queda fuera del horizonte del modelo", () => {
+    const text = describeTrendWindow({ ...base, remainingCandles: [3, 9], beyondHorizon: true }, "1h");
+    expect(text).toContain("el modelo cubre 5 velas y el resto es estadística de rachas");
   });
 });

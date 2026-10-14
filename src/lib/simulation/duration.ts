@@ -7,6 +7,7 @@
  * ventana estadística, no una fecha de término.
  */
 
+import { fmtDuration } from "@/lib/format";
 import type { Candle } from "@/lib/market/types";
 
 export type TrendDirection = "up" | "down";
@@ -43,6 +44,30 @@ function quantile(sortedAsc: number[], p: number): number {
   if (sortedAsc.length === 0) return 0;
   const idx = Math.min(sortedAsc.length - 1, Math.max(0, Math.round(p * (sortedAsc.length - 1))));
   return sortedAsc[idx];
+}
+
+/**
+ * Frase corta para listas (panel de activos, centro de señales). El texto
+ * vive aquí para poder probarlo sin montar React.
+ */
+export function describeTrendWindow(t: TrendDurationEstimate, intervalLabel: string): string {
+  const [lo, hi] = t.remainingCandles;
+  if (t.streakAlreadyTypical) {
+    return `la racha (${t.streakCandles} velas ${intervalLabel}) ya duró más que el 75 % de las rachas ${
+      t.direction === "up" ? "alcistas" : "bajistas"
+    }: estadísticamente cerca del final`;
+  }
+  const span = lo === hi ? `${hi} velas` : `${lo}–${hi} velas`;
+  const time =
+    lo === hi
+      ? fmtDuration(hi * t.intervalMs)
+      : lo === 0
+        ? `hasta ${fmtDuration(hi * t.intervalMs)}`
+        : `${fmtDuration(lo * t.intervalMs)}–${fmtDuration(hi * t.intervalMs)}`;
+  const base = `ventana restante ≈ ${span} ${intervalLabel} (${time})`;
+  return t.beyondHorizon && t.horizonCandles !== null
+    ? `${base}; el modelo cubre ${t.horizonCandles} velas y el resto es estadística de rachas`
+    : base;
 }
 
 /**

@@ -10,7 +10,8 @@ import { useConfig } from "@/lib/client/settings";
 import type { AnalysisResponse, TickerResponse } from "@/lib/client/api-types";
 import { INTERVAL_MS } from "@/lib/market/types";
 import { buildProjection } from "@/lib/simulation/projection";
-import { estimateTrendDuration } from "@/lib/simulation/duration";
+import { describeTrendWindow, estimateTrendDuration } from "@/lib/simulation/duration";
+import { decideVerdict } from "@/lib/signals/verdict";
 import type { PredictionResult } from "@/lib/ml/types";
 import { candleLabel, fmtDateTime, fmtDuration, fmtNum, fmtPercent, fmtPrice, timeAgo } from "@/lib/format";
 import { CRYPTO_ASSETS } from "@/lib/market/symbols";
@@ -319,76 +320,70 @@ type AvailablePrediction = Extract<PredictionResult, { available: true }>;
 
 interface ActionPlan {
   tone: "up" | "down" | "neutral";
+  /** Dirección cronometrable (null cuando no hay tendencia que medir). */
+  direction: "up" | "down" | null;
   title: string;
   note: string;
   reasons: string[];
 }
 
+/**
+ * Título/nivel del veredicto: decideVerdict es la única fuente de los umbrales,
+ * así la tarjeta de detalle y el panel de activos nunca se contradicen.
+ */
 function planFor(
   data: AnalysisResponse,
   pred: AvailablePrediction | null,
   mlMessage: string | null,
 ): ActionPlan {
   const sig = data.signal;
+  const verdict = decideVerdict({
+    signalKind: sig.kind,
+    score: sig.score,
+    probabilities: pred?.probabilities ?? null,
+    mlMessage,
+  });
   const ruleReasons = sig.reasons.slice(0, 3).map((r) => `${r.text} (+${r.weight})`);
-  if (sig.kind === "BUY") {
+  const baseReasons = ruleReasons.length
+    ? ruleReasons
+    : [`Reglas sin dirección dominante (bull ${sig.bullScore} / bear ${sig.bearScore})`];
+
+  if (verdict.tier === "rule_signal") {
     return {
-      tone: "up",
-      title: "SEÑAL: COMPRAR (simulada)",
+      tone: verdict.tone,
+      direction: verdict.direction,
+      title: `${verdict.label} (simulada)`,
       note: `Motor de reglas · score ${sig.score} · vigente hasta ${candleLabel(sig.validUntil)}.`,
       reasons: ruleReasons,
     };
   }
-  if (sig.kind === "SELL") {
+  if (verdict.tier === "ml_observational" || verdict.tier === "ml_mild" || verdict.tier === "ml_tie") {
     return {
-      tone: "down",
-      title: "SEÑAL: VENDER (simulada)",
-      note: `Motor de reglas · score ${sig.score} · vigente hasta ${candleLabel(sig.validUntil)}.`,
-      reasons: ruleReasons,
-    };
-  }
-  if (pred) {
-    const { up, down } = pred.probabilities;
-    const diff = up - down;
-    const edge = Math.abs(diff);
-    const pts = (x: number) => Math.round(x * 100);
-    const baseReasons = ruleReasons.length
-      ? ruleReasons
-      : [`Reglas sin dirección dominante (bull ${sig.bullScore} / bear ${sig.bearScore})`];
-    if (edge >= 0.08) {
-      return {
-        tone: diff > 0 ? "up" : "down",
-        title: diff > 0 ? "COMPRA OBSERVACIONAL — vigilar, no operar" : "VENTA OBSERVACIONAL — vigilar, no operar",
-        note: `Solo el modelo ML inclina a ${diff > 0 ? "subida" : "bajada"} (P↑ ${pts(up)}% vs P↓ ${pts(down)}%, margen ${pts(edge)} pts). El motor de reglas NO confirma: sin confluencia de tendencia/volumen esto no es una señal operativa.`,
-        reasons: baseReasons,
-      };
-    }
-    if (edge >= 0.01) {
-      return {
-        tone: diff > 0 ? "up" : "down",
-        title: diff > 0 ? "TENDENCIA LEVE A COMPRAR (solo observación)" : "TENDENCIA LEVE A VENDER (solo observación)",
-        note: `El ML favorece levemente ${diff > 0 ? "la subida" : "la bajada"} (P↑ ${pts(up)}% vs P↓ ${pts(down)}%: solo ${pts(edge)} pts de margen). Con un modelo cuya precisión fuera de muestra es ~0.38, este margen es ruido plausible: NO es señal de compra/venta, solo la estimación direccional actual.`,
-        reasons: baseReasons,
-      };
-    }
-    return {
-      tone: "neutral",
-      title: "ESPERAR",
-      note: `El ML está prácticamente empatado (P↑ ${pts(up)}% vs P↓ ${pts(down)}%) y las reglas no confirman dirección. En empate técnico la decisión honesta es no tener sesgo.`,
+      tone: verdict.tone,
+      direction: verdict.direction,
+      title:
+        verdict.tier === "ml_observational"
+          ? `${verdict.label} — vigilar, no operar`
+          : verdict.tier === "ml_mild"
+            ? `${verdict.label} (solo observación)`
+            : verdict.label,
+      note: verdict.detail,
       reasons: baseReasons,
     };
   }
-  const why = sig.kind === "WAIT"
-    ? "Hay condiciones parciales pero la puntuación aún no supera el umbral."
-    : sig.kind === "INSUFFICIENT_DATA"
-      ? "Faltan velas cerradas para evaluar (se necesitan 220+)."
-      : sig.kind === "DATA_ERROR"
-        ? "No se pudieron obtener datos del proveedor."
-        : "Ninguna dirección supera los umbrales de confluencia del motor.";
+  const why =
+    sig.kind === "WAIT"
+      ? "Hay condiciones parciales pero la puntuación aún no supera el umbral."
+      : sig.kind === "INSUFFICIENT_DATA"
+        ? "Faltan velas cerradas para evaluar (se necesitan 220+)."
+        : sig.kind === "DATA_ERROR"
+          ? "No se pudieron obtener datos del proveedor."
+          : "Ninguna dirección supera los umbrales de confluencia del motor.";
   return {
-    tone: "neutral",
-    title: mlMessage ? "ESPERAR — sin modelo ML para este par" : "ESPERAR",
-    note: `${why} ${mlMessage ?? "Sin predicción ML disponible para afinar el sesgo."}`,
+    tone: verdict.tone,
+    direction: verdict.direction,
+    title: verdict.tier === "no_model" ? "ESPERAR — sin modelo ML para este par" : verdict.label,
+    note: `${why} ${verdict.detail}`,
     reasons: ruleReasons,
   };
 }
@@ -409,7 +404,7 @@ function ActionPlanCard({
     plan.tone === "up" ? "border-up/50 text-up" : plan.tone === "down" ? "border-down/50 text-down" : "border-border-subtle text-foreground";
 
   const intervalMs = INTERVAL_MS[data.interval] ?? 3_600_000;
-  const dir = plan.tone === "up" || plan.tone === "down" ? plan.tone : null;
+  const dir = plan.direction;
   const duration = dir
     ? estimateTrendDuration({
         candles: data.candles,
@@ -418,13 +413,7 @@ function ActionPlanCard({
         horizonCandles: prediction?.horizon ?? projection?.horizon ?? null,
       })
     : null;
-  const lo = duration?.remainingCandles[0] ?? 0;
   const hi = duration?.remainingCandles[1] ?? 0;
-  const windowText = duration
-    ? lo === hi
-      ? `≈ ${hi} velas (${fmtDuration(hi * intervalMs)})`
-      : `${lo}–${hi} velas (${lo === 0 ? "cualquier momento" : fmtDuration(lo * intervalMs)} – ${fmtDuration(hi * intervalMs)})`
-    : "";
   return (
     <Card title="Plan de acción (motor de reglas + modelo ML)">
       <div className="flex flex-wrap items-center gap-3">
@@ -469,14 +458,8 @@ function ActionPlanCard({
             </p>
           ) : (
             <p className="mt-1 text-sm font-medium">
-              Ventana restante estimada: {windowText}, es decir hasta{" "}
-              {fmtDateTime(duration.anchorClosedTime + (hi + 1) * intervalMs)} aproximadamente.
-            </p>
-          )}
-          {duration.beyondHorizon && duration.horizonCandles !== null && (
-            <p className="mt-1 text-[11px] text-muted">
-              El modelo ML sólo evalúa {duration.horizonCandles} velas; lo que excede ese horizonte es estadística de
-              rachas observadas, no predicción del modelo.
+              {describeTrendWindow(duration, data.interval)}; fin aproximado{" "}
+              {fmtDateTime(duration.anchorClosedTime + (hi + 1) * intervalMs)}.
             </p>
           )}
           <p className="mt-1 text-[11px] text-muted">
