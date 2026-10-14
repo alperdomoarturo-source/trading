@@ -54,6 +54,20 @@ export function timeAgo(ms: number | null | undefined, now?: number): string {
   return `hace ${days} d`;
 }
 
+/** Duración en ms a texto legible ("45 min", "3 h", "1 d 6 h"). */
+export function fmtDuration(ms: number | null | undefined): string {
+  if (ms === null || ms === undefined || !Number.isFinite(ms) || ms < 0) return "—";
+  const mins = Math.round(ms / 60_000);
+  if (mins < 1) return "<1 min";
+  if (mins < 60) return `${mins} min`;
+  const hours = Math.floor(mins / 60);
+  const restMins = mins % 60;
+  if (hours < 24) return restMins ? `${hours} h ${restMins} min` : `${hours} h`;
+  const days = Math.floor(hours / 24);
+  const restHours = hours % 24;
+  return restHours ? `${days} d ${restHours} h` : `${days} d`;
+}
+
 /** Timestamp de vela (ms) a "YYYY-MM-DD HH:MM" legible en zona local. */
 export function candleLabel(ms: number): string {
   const d = new Date(ms);

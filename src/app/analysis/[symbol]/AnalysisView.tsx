@@ -10,8 +10,9 @@ import { useConfig } from "@/lib/client/settings";
 import type { AnalysisResponse, TickerResponse } from "@/lib/client/api-types";
 import { INTERVAL_MS } from "@/lib/market/types";
 import { buildProjection } from "@/lib/simulation/projection";
+import { estimateTrendDuration } from "@/lib/simulation/duration";
 import type { PredictionResult } from "@/lib/ml/types";
-import { candleLabel, fmtNum, fmtPercent, fmtPrice, timeAgo } from "@/lib/format";
+import { candleLabel, fmtDateTime, fmtDuration, fmtNum, fmtPercent, fmtPrice, timeAgo } from "@/lib/format";
 import { CRYPTO_ASSETS } from "@/lib/market/symbols";
 
 const INTERVAL_OPTIONS = ["15m", "30m", "1h", "4h", "12h", "1d"];
@@ -406,6 +407,24 @@ function ActionPlanCard({
   const plan = planFor(data, prediction, predictionMessage);
   const toneClass =
     plan.tone === "up" ? "border-up/50 text-up" : plan.tone === "down" ? "border-down/50 text-down" : "border-border-subtle text-foreground";
+
+  const intervalMs = INTERVAL_MS[data.interval] ?? 3_600_000;
+  const dir = plan.tone === "up" || plan.tone === "down" ? plan.tone : null;
+  const duration = dir
+    ? estimateTrendDuration({
+        candles: data.candles,
+        direction: dir,
+        intervalMs,
+        horizonCandles: prediction?.horizon ?? projection?.horizon ?? null,
+      })
+    : null;
+  const lo = duration?.remainingCandles[0] ?? 0;
+  const hi = duration?.remainingCandles[1] ?? 0;
+  const windowText = duration
+    ? lo === hi
+      ? `≈ ${hi} velas (${fmtDuration(hi * intervalMs)})`
+      : `${lo}–${hi} velas (${lo === 0 ? "cualquier momento" : fmtDuration(lo * intervalMs)} – ${fmtDuration(hi * intervalMs)})`
+    : "";
   return (
     <Card title="Plan de acción (motor de reglas + modelo ML)">
       <div className="flex flex-wrap items-center gap-3">
@@ -426,6 +445,51 @@ function ActionPlanCard({
             <li key={i}>{r}</li>
           ))}
         </ul>
+      )}
+      {duration && (
+        <div className="mt-3 rounded-md border border-border-subtle bg-surface-2/40 p-3">
+          <div className="text-[11px] uppercase tracking-wide text-muted">
+            ¿Cuánto tiempo podría durar esta tendencia?
+          </div>
+          <p className="mt-1 text-sm">
+            La racha {duration.direction === "up" ? "alcista" : "bajista"} actual lleva{" "}
+            <span className="font-mono">{duration.streakCandles}</span> velas {data.interval} (≈{" "}
+            {fmtDuration(duration.streakCandles * intervalMs)}). En las{" "}
+            <span className="font-mono">{duration.candlesAnalysed}</span> velas cerradas analizadas hubo{" "}
+            <span className="font-mono">{duration.runsAnalysed}</span> rachas así: la mitad central duró entre{" "}
+            <span className="font-mono">{duration.typicalRunRangeCandles[0]}</span> y{" "}
+            <span className="font-mono">{duration.typicalRunRangeCandles[1]}</span> velas (mediana{" "}
+            <span className="font-mono">{duration.medianRunCandles}</span>).
+          </p>
+          {duration.streakAlreadyTypical ? (
+            <p className="mt-1 text-sm font-medium">
+              La racha actual ya duró más que el 75 % de las rachas históricas:{" "}
+              {Math.round(duration.exhaustedShare * 100)} % de ellas habían terminado a este punto. Estadísticamente
+              está cerca del final, pero no hay fecha de corte.
+            </p>
+          ) : (
+            <p className="mt-1 text-sm font-medium">
+              Ventana restante estimada: {windowText}, es decir hasta{" "}
+              {fmtDateTime(duration.anchorClosedTime + (hi + 1) * intervalMs)} aproximadamente.
+            </p>
+          )}
+          {duration.beyondHorizon && duration.horizonCandles !== null && (
+            <p className="mt-1 text-[11px] text-muted">
+              El modelo ML sólo evalúa {duration.horizonCandles} velas; lo que excede ese horizonte es estadística de
+              rachas observadas, no predicción del modelo.
+            </p>
+          )}
+          <p className="mt-1 text-[11px] text-muted">
+            Duración típica medida en el pasado reciente ({data.interval}), no una promesa: una racha puede cortarse con
+            la próxima vela o extenderse mucho más.
+          </p>
+        </div>
+      )}
+      {dir && !duration && (
+        <p className="mt-2 text-[11px] text-muted">
+          No hay suficientes rachas {dir === "up" ? "alcistas" : "bajistas"} cerradas en esta ventana como para estimar
+          una duración sin inventar.
+        </p>
       )}
       {projection && (
         <p className="mt-3 text-[11px] text-muted">
