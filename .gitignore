@@ -54,3 +54,6 @@ _dev.log
 
 # artefactos del CLI de Supabase
 supabase/.temp/
+
+.vercel
+.env*
