@@ -1,0 +1,322 @@
+{
+  "symbol": "BNBUSDT",
+  "interval": "1h",
+  "horizon": 5,
+  "threshold": {
+    "k": 0.5,
+    "minMovePct": 0.15
+  },
+  "generatedAt": "2026-10-14T03:10:55.737393+00:00",
+  "data": {
+    "candlesClosed": 4999,
+    "usableRows": 4795,
+    "windowFrom": 1774666800000,
+    "windowTo": 1791925200000
+  },
+  "splits": {
+    "method": "temporal, sin shuffle. pool (walk-forward expandiente x3) -> val (calibracion) -> test (20% final)",
+    "poolRows": 3117,
+    "valRows": 719,
+    "testRows": 959
+  },
+  "walkForward": {
+    "baseline_momentum": {
+      "folds": 3,
+      "meanBalancedAccuracy": 0.3323,
+      "meanAccuracy": 0.3379,
+      "perFoldBalancedAccuracy": [
+        0.3356,
+        0.3156,
+        0.3457
+      ],
+      "perFoldN": [
+        779,
+        779,
+        780
+      ]
+    },
+    "logistic_regression": {
+      "folds": 3,
+      "meanBalancedAccuracy": 0.3619,
+      "meanAccuracy": 0.364,
+      "perFoldBalancedAccuracy": [
+        0.3871,
+        0.3562,
+        0.3424
+      ],
+      "perFoldN": [
+        779,
+        779,
+        780
+      ]
+    },
+    "random_forest": {
+      "folds": 3,
+      "meanBalancedAccuracy": 0.3857,
+      "meanAccuracy": 0.3901,
+      "perFoldBalancedAccuracy": [
+        0.3979,
+        0.3688,
+        0.3903
+      ],
+      "perFoldN": [
+        779,
+        779,
+        780
+      ]
+    },
+    "hist_gradient_boosting": {
+      "folds": 3,
+      "meanBalancedAccuracy": 0.3762,
+      "meanAccuracy": 0.376,
+      "perFoldBalancedAccuracy": [
+        0.3876,
+        0.3793,
+        0.3616
+      ],
+      "perFoldN": [
+        779,
+        779,
+        780
+      ]
+    }
+  },
+  "finalTest": {
+    "baseline_momentum": {
+      "n": 959,
+      "accuracy": 0.3222,
+      "balancedAccuracy": 0.3101,
+      "classDistribution": {
+        "DOWN": 323,
+        "NEUTRAL": 295,
+        "UP": 341
+      },
+      "perClass": {
+        "DOWN": {
+          "precision": 0.3155,
+          "recall": 0.4551,
+          "f1": 0.3726
+        },
+        "NEUTRAL": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "UP": {
+          "precision": 0.3299,
+          "recall": 0.4751,
+          "f1": 0.3894
+        }
+      },
+      "confusionMatrix": [
+        [
+          147,
+          1,
+          175
+        ],
+        [
+          141,
+          0,
+          154
+        ],
+        [
+          178,
+          1,
+          162
+        ]
+      ]
+    },
+    "logistic_regression": {
+      "n": 959,
+      "accuracy": 0.3618,
+      "balancedAccuracy": 0.3572,
+      "classDistribution": {
+        "DOWN": 323,
+        "NEUTRAL": 295,
+        "UP": 341
+      },
+      "perClass": {
+        "DOWN": {
+          "precision": 0.3398,
+          "recall": 0.2693,
+          "f1": 0.3005
+        },
+        "NEUTRAL": {
+          "precision": 0.3466,
+          "recall": 0.2949,
+          "f1": 0.3187
+        },
+        "UP": {
+          "precision": 0.3827,
+          "recall": 0.5073,
+          "f1": 0.4363
+        }
+      },
+      "confusionMatrix": [
+        [
+          87,
+          79,
+          157
+        ],
+        [
+          86,
+          87,
+          122
+        ],
+        [
+          83,
+          85,
+          173
+        ]
+      ],
+      "logLoss": 1.0964,
+      "brierScore": 0.2216
+    },
+    "random_forest": {
+      "n": 959,
+      "accuracy": 0.3577,
+      "balancedAccuracy": 0.3538,
+      "classDistribution": {
+        "DOWN": 323,
+        "NEUTRAL": 295,
+        "UP": 341
+      },
+      "perClass": {
+        "DOWN": {
+          "precision": 0.3051,
+          "recall": 0.2229,
+          "f1": 0.2576
+        },
+        "NEUTRAL": {
+          "precision": 0.4085,
+          "recall": 0.3254,
+          "f1": 0.3623
+        },
+        "UP": {
+          "precision": 0.3586,
+          "recall": 0.5132,
+          "f1": 0.4222
+        }
+      },
+      "confusionMatrix": [
+        [
+          72,
+          65,
+          186
+        ],
+        [
+          72,
+          96,
+          127
+        ],
+        [
+          92,
+          74,
+          175
+        ]
+      ],
+      "logLoss": 1.0993,
+      "brierScore": 0.2225
+    },
+    "hist_gradient_boosting": {
+      "n": 959,
+      "accuracy": 0.3525,
+      "balancedAccuracy": 0.3487,
+      "classDistribution": {
+        "DOWN": 323,
+        "NEUTRAL": 295,
+        "UP": 341
+      },
+      "perClass": {
+        "DOWN": {
+          "precision": 0.3199,
+          "recall": 0.2693,
+          "f1": 0.2924
+        },
+        "NEUTRAL": {
+          "precision": 0.3618,
+          "recall": 0.3017,
+          "f1": 0.329
+        },
+        "UP": {
+          "precision": 0.3673,
+          "recall": 0.4751,
+          "f1": 0.4143
+        }
+      },
+      "confusionMatrix": [
+        [
+          87,
+          82,
+          154
+        ],
+        [
+          81,
+          89,
+          125
+        ],
+        [
+          104,
+          75,
+          162
+        ]
+      ],
+      "logLoss": 1.3201,
+      "brierScore": 0.26
+    },
+    "logistic_calibrated": {
+      "n": 959,
+      "accuracy": 0.3472,
+      "balancedAccuracy": 0.3283,
+      "classDistribution": {
+        "DOWN": 323,
+        "NEUTRAL": 295,
+        "UP": 341
+      },
+      "perClass": {
+        "DOWN": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "NEUTRAL": {
+          "precision": 0.3158,
+          "recall": 0.061,
+          "f1": 0.1023
+        },
+        "UP": {
+          "precision": 0.3492,
+          "recall": 0.9238,
+          "f1": 0.5068
+        }
+      },
+      "confusionMatrix": [
+        [
+          0,
+          13,
+          310
+        ],
+        [
+          0,
+          18,
+          277
+        ],
+        [
+          0,
+          26,
+          315
+        ]
+      ],
+      "logLoss": 1.0955,
+      "brierScore": 0.2215
+    }
+  },
+  "selectedModel": "random_forest",
+  "servingModel": "logistic_calibrated",
+  "meanMaxProb": 0.3657,
+  "validityStatus": "valid",
+  "notes": [
+    "El mejor modelo offline por walk-forward fue random_forest (balacc media 0.3857). El servicio usa LR calibrada porque es el unico formato scorable en JavaScript sin dependencias; RF/HGB no son exportables a un JSON ligero. Las metricas de random_forest en el test final quedan en el informe.",
+    "Calibracion: Platt (sigmoid) con cv=3 sobre train+val; isotonic descrito en README por tameno de muestra."
+  ]
+}
