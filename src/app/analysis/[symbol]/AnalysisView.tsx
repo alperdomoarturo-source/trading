@@ -163,7 +163,14 @@ export function AnalysisView({ symbol: rawSymbol }: { symbol: string }) {
 
       {data && data.candles.length > 0 && (
         <>
-          <ActionPlanCard signal={data} prediction={predResult} projection={projection} />
+          <ActionPlanCard
+            signal={data}
+            prediction={predResult}
+            predictionMessage={
+              prediction.data && !prediction.data.available ? prediction.data.message : null
+            }
+            projection={projection}
+          />
 
           <CandleChart
             candles={data.candles}
@@ -291,7 +298,11 @@ interface ActionPlan {
   reasons: string[];
 }
 
-function planFor(data: AnalysisResponse, pred: AvailablePrediction | null): ActionPlan {
+function planFor(
+  data: AnalysisResponse,
+  pred: AvailablePrediction | null,
+  mlMessage: string | null,
+): ActionPlan {
   const sig = data.signal;
   const ruleReasons = sig.reasons.slice(0, 3).map((r) => `${r.text} (+${r.weight})`);
   if (sig.kind === "BUY") {
@@ -350,8 +361,8 @@ function planFor(data: AnalysisResponse, pred: AvailablePrediction | null): Acti
         : "Ninguna dirección supera los umbrales de confluencia del motor.";
   return {
     tone: "neutral",
-    title: "ESPERAR",
-    note: `${why} Sin predicción ML disponible para afinar el sesgo.`,
+    title: mlMessage ? "ESPERAR — sin modelo ML para este par" : "ESPERAR",
+    note: `${why} ${mlMessage ?? "Sin predicción ML disponible para afinar el sesgo."}`,
     reasons: ruleReasons,
   };
 }
@@ -359,13 +370,15 @@ function planFor(data: AnalysisResponse, pred: AvailablePrediction | null): Acti
 function ActionPlanCard({
   signal: data,
   prediction,
+  predictionMessage,
   projection,
 }: {
   signal: AnalysisResponse;
   prediction: AvailablePrediction | null;
+  predictionMessage: string | null;
   projection: ReturnType<typeof buildProjection>;
 }) {
-  const plan = planFor(data, prediction);
+  const plan = planFor(data, prediction, predictionMessage);
   const toneClass =
     plan.tone === "up" ? "border-up/50 text-up" : plan.tone === "down" ? "border-down/50 text-down" : "border-border-subtle text-foreground";
   return (
