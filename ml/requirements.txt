@@ -1,0 +1,13 @@
+# Entrenamiento ML (Etapa 4) — instalar en ml/.venv (Python 3.14.x).
+#
+# scikit-learn arrastra scipy; en este PC la build 1.18.x de scipy trae DLLs
+# sin firmar que Windows Smart App Control bloquea (ImportError: directiva de
+# Control de aplicaciones). scipy 1.17.* funciona en Python 3.14, por eso se
+# fija aqui. numpy >= 2 es requisito de sklearn 1.9.
+#
+# pandas NO se usa a proposito: las features se calculan en Python puro para
+# reproducir EXACTAMENTE las formulas de src/lib/analysis/indicators.ts
+# (semillas SMA de EMA/Wilder etc.), que pandas.ewm no replica.
+scikit-learn==1.9.1
+scipy==1.17.*
+numpy>=2.0
