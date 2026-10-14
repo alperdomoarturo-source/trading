@@ -312,23 +312,34 @@ function planFor(data: AnalysisResponse, pred: AvailablePrediction | null): Acti
   }
   if (pred) {
     const { up, down } = pred.probabilities;
-    const edge = Math.abs(up - down);
-    if (edge >= 0.08 && up > down) {
+    const diff = up - down;
+    const edge = Math.abs(diff);
+    const pts = (x: number) => Math.round(x * 100);
+    const baseReasons = ruleReasons.length
+      ? ruleReasons
+      : [`Reglas sin dirección dominante (bull ${sig.bullScore} / bear ${sig.bearScore})`];
+    if (edge >= 0.08) {
       return {
-        tone: "up",
-        title: "COMPRA OBSERVACIONAL — vigilar, no operar",
-        note: `Solo el modelo ML inclina a subida (P↑ ${Math.round(up * 100)}% vs P↓ ${Math.round(down * 100)}%). El motor de reglas NO confirma: sin confluencia de tendencia/volumen esto no es una señal operativa.`,
-        reasons: ruleReasons.length ? ruleReasons : ["Sin condiciones de regla cumplidas (bull " + sig.bullScore + " / bear " + sig.bearScore + ")"],
+        tone: diff > 0 ? "up" : "down",
+        title: diff > 0 ? "COMPRA OBSERVACIONAL — vigilar, no operar" : "VENTA OBSERVACIONAL — vigilar, no operar",
+        note: `Solo el modelo ML inclina a ${diff > 0 ? "subida" : "bajada"} (P↑ ${pts(up)}% vs P↓ ${pts(down)}%, margen ${pts(edge)} pts). El motor de reglas NO confirma: sin confluencia de tendencia/volumen esto no es una señal operativa.`,
+        reasons: baseReasons,
       };
     }
-    if (edge >= 0.08 && down > up) {
+    if (edge >= 0.01) {
       return {
-        tone: "down",
-        title: "VENTA OBSERVACIONAL — vigilar, no operar",
-        note: `Solo el modelo ML inclina a bajada (P↓ ${Math.round(down * 100)}% vs P↑ ${Math.round(up * 100)}%). El motor de reglas NO confirma: sin confluencia de tendencia/volumen esto no es una señal operativa.`,
-        reasons: ruleReasons.length ? ruleReasons : ["Sin condiciones de regla cumplidas (bull " + sig.bullScore + " / bear " + sig.bearScore + ")"],
+        tone: diff > 0 ? "up" : "down",
+        title: diff > 0 ? "TENDENCIA LEVE A COMPRAR (solo observación)" : "TENDENCIA LEVE A VENDER (solo observación)",
+        note: `El ML favorece levemente ${diff > 0 ? "la subida" : "la bajada"} (P↑ ${pts(up)}% vs P↓ ${pts(down)}%: solo ${pts(edge)} pts de margen). Con un modelo cuya precisión fuera de muestra es ~0.38, este margen es ruido plausible: NO es señal de compra/venta, solo la estimación direccional actual.`,
+        reasons: baseReasons,
       };
     }
+    return {
+      tone: "neutral",
+      title: "ESPERAR",
+      note: `El ML está prácticamente empatado (P↑ ${pts(up)}% vs P↓ ${pts(down)}%) y las reglas no confirman dirección. En empate técnico la decisión honesta es no tener sesgo.`,
+      reasons: baseReasons,
+    };
   }
   const why = sig.kind === "WAIT"
     ? "Hay condiciones parciales pero la puntuación aún no supera el umbral."
@@ -340,7 +351,7 @@ function planFor(data: AnalysisResponse, pred: AvailablePrediction | null): Acti
   return {
     tone: "neutral",
     title: "ESPERAR",
-    note: `${why}${pred ? " El ML tampoco muestra margen claro (|P↑ − P↓| < 8 pts)." : ""}`,
+    note: `${why} Sin predicción ML disponible para afinar el sesgo.`,
     reasons: ruleReasons,
   };
 }
