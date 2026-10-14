@@ -51,6 +51,13 @@ export interface AnalysisResponse {
   signal: Signal;
 }
 
+export interface TickerResponse {
+  symbol: string;
+  price: number;
+  changePercent24h: number;
+  fetchedAt: number;
+}
+
 export interface SignalsResponse {
   interval: string;
   generatedAt: number;

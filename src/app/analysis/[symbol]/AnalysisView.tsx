@@ -7,7 +7,7 @@ import { SignalCard } from "@/components/SignalCard";
 import { Badge, Card, EmptyState, ErrorBox, Loading } from "@/components/ui";
 import { useApi } from "@/lib/client/hooks";
 import { useConfig } from "@/lib/client/settings";
-import type { AnalysisResponse } from "@/lib/client/api-types";
+import type { AnalysisResponse, TickerResponse } from "@/lib/client/api-types";
 import { INTERVAL_MS } from "@/lib/market/types";
 import { buildProjection } from "@/lib/simulation/projection";
 import type { PredictionResult } from "@/lib/ml/types";
@@ -53,6 +53,8 @@ export function AnalysisView({ symbol: rawSymbol }: { symbol: string }) {
   const prediction = useApi<PredictionApiResponse>(predictionUrl, 120_000);
   const predResult = prediction.data && prediction.data.available ? prediction.data : null;
 
+  const live = useApi<TickerResponse>(`/api/ticker?symbol=${encodeURIComponent(symbol)}`, 20_000);
+
   const projection = useMemo(() => {
     if (!data || !data.candles.length) return null;
     const lastClosed = data.signal.candleTime
@@ -74,6 +76,14 @@ export function AnalysisView({ symbol: rawSymbol }: { symbol: string }) {
   const change = data ? data.candles.length > 0 ? ((data.candles[data.candles.length - 1].close / data.candles[Math.max(0, data.candles.length - 25)].close) - 1) * 100 : null : null;
   const recentPatterns = (data?.patterns ?? []).slice().reverse().slice(0, 12);
 
+  /**
+   * Precio visible: última operación del ticker (20 s de caché), no la última
+   * vela cerrada; en 1h la vela cerrada sólo cambia cada hora y parece congelada.
+   */
+  const livePrice = live.data?.price ?? data?.forming?.close ?? data?.snapshot?.close ?? null;
+  const liveChange = live.data?.changePercent24h ?? change;
+  const closedAt = data && data.signal.candleTime ? candleLabel(data.signal.candleTime) : null;
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -83,13 +93,25 @@ export function AnalysisView({ symbol: rawSymbol }: { symbol: string }) {
             <span className="font-mono text-muted">{symbol}</span>
           </h1>
           {data && data.snapshot && (
-            <p className="mt-1 font-mono text-2xl">
-              {fmtPrice(data.snapshot.close)}{" "}
-              <span className={change !== null && change >= 0 ? "text-up" : "text-down"}>
-                {fmtPercent(change)}
-              </span>
-              <span className="ml-2 text-xs text-muted">últimas ~24 velas</span>
-            </p>
+            <div className="mt-1">
+              <p className="font-mono text-2xl">
+                {fmtPrice(livePrice)}{" "}
+                <span className={liveChange !== null && liveChange >= 0 ? "text-up" : "text-down"}>
+                  {fmtPercent(liveChange)}
+                </span>
+                <span className="ml-2 text-xs text-muted">
+                  {live.data ? "variación 24 h" : "últimas ~24 velas"}
+                </span>
+              </p>
+              <p className="text-xs text-muted">
+                {live.data
+                  ? `última operación ${timeAgo(live.data.fetchedAt)}`
+                  : live.error
+                    ? "precio en vivo no disponible"
+                    : "consultando precio en vivo…"}
+                {closedAt ? ` · vela ${data.interval} cerrada ${fmtPrice(data.snapshot.close)} (${closedAt}), que es la que usa el motor` : ""}
+              </p>
+            </div>
           )}
         </div>
         <div className="flex items-center gap-2">
@@ -101,7 +123,10 @@ export function AnalysisView({ symbol: rawSymbol }: { symbol: string }) {
             </Badge>
           )}
           <button
-            onClick={() => void refresh()}
+            onClick={() => {
+              void refresh();
+              void live.refresh();
+            }}
             className="rounded-md border border-border-subtle bg-surface-2 px-3 py-1.5 text-sm hover:border-accent"
           >
             Actualizar
