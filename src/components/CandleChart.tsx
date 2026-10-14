@@ -22,6 +22,7 @@ import {
 import type { Candle } from "@/lib/market/types";
 import type { DetectedPattern } from "@/lib/analysis/patterns";
 import type { Level } from "@/lib/analysis/levels";
+import type { Projection } from "@/lib/simulation/projection";
 import { fmtPrice } from "@/lib/format";
 
 export interface ChartOverlays {
@@ -48,6 +49,8 @@ export interface CandleChartProps {
   patterns?: DetectedPattern[] | null;
   markers?: ChartMarker[] | null;
   formingLabel?: string | null;
+  /** Cono de escenario hipotético (simulación basada en la predicción ML). */
+  projection?: Projection | null;
   height?: number;
 }
 
@@ -79,6 +82,7 @@ export function CandleChart({
   patterns,
   markers,
   formingLabel,
+  projection,
   height = 460,
 }: CandleChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -317,6 +321,50 @@ export function CandleChart({
     }
   }, [patterns, markers, candles]);
 
+  // Cono de proyección hipotético (punteado): trayectoria central + bandas ATR.
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const keys = ["projMid", "projUpper", "projLower"] as const;
+    const ensure = (key: (typeof keys)[number], color: string) => {
+      if (!emaSeriesRef.current[key]) {
+        emaSeriesRef.current[key] = chart.addSeries(LineSeries, {
+          color,
+          lineWidth: 1,
+          lineStyle: LineStyle.Dotted,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false,
+        });
+      }
+      return emaSeriesRef.current[key]!;
+    };
+    if (!projection || projection.points.length < 2) {
+      for (const key of keys) {
+        const s = emaSeriesRef.current[key];
+        if (s) {
+          s.setData([]);
+          s.applyOptions({ visible: false });
+        }
+      }
+      return;
+    }
+    const proj = projection;
+    const midColor =
+      proj.scenario === "up" ? "#26a69a" : proj.scenario === "down" ? "#ef5350" : "#f0b90b";
+    const mid = ensure("projMid", midColor);
+    const upper = ensure("projUpper", "#7c8da6");
+    const lower = ensure("projLower", "#7c8da6");
+    const toData = (pick: (p: (typeof proj.points)[number]) => number): LineData<Time>[] =>
+      proj.points.map((p) => ({ time: (p.time / 1000) as UTCTimestamp, value: pick(p) }));
+    mid.setData(toData((p) => p.mid));
+    upper.setData(toData((p) => p.upper));
+    lower.setData(toData((p) => p.lower));
+    mid.applyOptions({ visible: true });
+    upper.applyOptions({ visible: true });
+    lower.applyOptions({ visible: true });
+  }, [projection]);
+
   const legendCandle = legend;
   const isUp = legendCandle ? legendCandle.close >= legendCandle.open : true;
 
@@ -357,6 +405,14 @@ export function CandleChart({
         {showOverlays.bb && (
           <span className="rounded bg-surface-2/90 px-2 py-0.5 text-[#7c8da6]">
             Bollinger 20·2σ
+          </span>
+        )}
+        {projection && projection.points.length >= 2 && (
+          <span className="rounded bg-surface-2/90 px-2 py-0.5">
+            <span className={projection.scenario === "up" ? "text-up" : projection.scenario === "down" ? "text-down" : "text-warning"}>
+              Proyección ML
+            </span>{" "}
+            · escenario hipotético
           </span>
         )}
         {formingLabel && (

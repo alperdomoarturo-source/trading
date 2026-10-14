@@ -8,6 +8,8 @@ import { Badge, Card, EmptyState, ErrorBox, Loading } from "@/components/ui";
 import { useApi } from "@/lib/client/hooks";
 import { useConfig } from "@/lib/client/settings";
 import type { AnalysisResponse } from "@/lib/client/api-types";
+import { INTERVAL_MS } from "@/lib/market/types";
+import { buildProjection } from "@/lib/simulation/projection";
 import type { PredictionResult } from "@/lib/ml/types";
 import { candleLabel, fmtNum, fmtPercent, fmtPrice, timeAgo } from "@/lib/format";
 import { CRYPTO_ASSETS } from "@/lib/market/symbols";
@@ -46,6 +48,27 @@ export function AnalysisView({ symbol: rawSymbol }: { symbol: string }) {
   }, [symbol, effectiveInterval, config]);
 
   const { data, loading, error, fetchedAt, refresh } = useApi<AnalysisResponse>(url, 60_000);
+
+  const predictionUrl = `/api/prediction?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(effectiveInterval)}`;
+  const prediction = useApi<PredictionApiResponse>(predictionUrl, 120_000);
+  const predResult = prediction.data && prediction.data.available ? prediction.data : null;
+
+  const projection = useMemo(() => {
+    if (!data || !data.candles.length) return null;
+    const lastClosed = data.signal.candleTime
+      ? { time: data.signal.candleTime, close: data.signal.priceRef }
+      : null;
+    const atrPct = data.snapshot?.atrPct ?? null;
+    if (!lastClosed || !predResult) return null;
+    return buildProjection({
+      lastClosedTime: lastClosed.time,
+      close: lastClosed.close,
+      atrPct,
+      intervalMs: INTERVAL_MS[data.interval] ?? 3_600_000,
+      probabilities: predResult.probabilities,
+      horizon: predResult.horizon,
+    });
+  }, [data, predResult]);
 
   const asset = CRYPTO_ASSETS.find((a) => a.symbol === symbol);
   const change = data ? data.candles.length > 0 ? ((data.candles[data.candles.length - 1].close / data.candles[Math.max(0, data.candles.length - 25)].close) - 1) * 100 : null : null;
@@ -140,6 +163,8 @@ export function AnalysisView({ symbol: rawSymbol }: { symbol: string }) {
 
       {data && data.candles.length > 0 && (
         <>
+          <ActionPlanCard signal={data} prediction={predResult} projection={projection} />
+
           <CandleChart
             candles={data.candles}
             overlays={data.overlays}
@@ -149,6 +174,7 @@ export function AnalysisView({ symbol: rawSymbol }: { symbol: string }) {
             formingLabel={
               data.forming ? "Última vela en formación (provisional)" : null
             }
+            projection={projection}
             height={480}
           />
 
@@ -239,7 +265,7 @@ export function AnalysisView({ symbol: rawSymbol }: { symbol: string }) {
                 </p>
               </Card>
 
-              <PredictionPanel symbol={symbol} interval={effectiveInterval} />
+              <PredictionPanel data={prediction.data} loading={prediction.loading} />
             </div>
           </div>
 
@@ -253,6 +279,115 @@ export function AnalysisView({ symbol: rawSymbol }: { symbol: string }) {
         </>
       )}
     </div>
+  );
+}
+
+type AvailablePrediction = Extract<PredictionResult, { available: true }>;
+
+interface ActionPlan {
+  tone: "up" | "down" | "neutral";
+  title: string;
+  note: string;
+  reasons: string[];
+}
+
+function planFor(data: AnalysisResponse, pred: AvailablePrediction | null): ActionPlan {
+  const sig = data.signal;
+  const ruleReasons = sig.reasons.slice(0, 3).map((r) => `${r.text} (+${r.weight})`);
+  if (sig.kind === "BUY") {
+    return {
+      tone: "up",
+      title: "SEÑAL: COMPRAR (simulada)",
+      note: `Motor de reglas · score ${sig.score} · vigente hasta ${candleLabel(sig.validUntil)}.`,
+      reasons: ruleReasons,
+    };
+  }
+  if (sig.kind === "SELL") {
+    return {
+      tone: "down",
+      title: "SEÑAL: VENDER (simulada)",
+      note: `Motor de reglas · score ${sig.score} · vigente hasta ${candleLabel(sig.validUntil)}.`,
+      reasons: ruleReasons,
+    };
+  }
+  if (pred) {
+    const { up, down } = pred.probabilities;
+    const edge = Math.abs(up - down);
+    if (edge >= 0.08 && up > down) {
+      return {
+        tone: "up",
+        title: "COMPRA OBSERVACIONAL — vigilar, no operar",
+        note: `Solo el modelo ML inclina a subida (P↑ ${Math.round(up * 100)}% vs P↓ ${Math.round(down * 100)}%). El motor de reglas NO confirma: sin confluencia de tendencia/volumen esto no es una señal operativa.`,
+        reasons: ruleReasons.length ? ruleReasons : ["Sin condiciones de regla cumplidas (bull " + sig.bullScore + " / bear " + sig.bearScore + ")"],
+      };
+    }
+    if (edge >= 0.08 && down > up) {
+      return {
+        tone: "down",
+        title: "VENTA OBSERVACIONAL — vigilar, no operar",
+        note: `Solo el modelo ML inclina a bajada (P↓ ${Math.round(down * 100)}% vs P↑ ${Math.round(up * 100)}%). El motor de reglas NO confirma: sin confluencia de tendencia/volumen esto no es una señal operativa.`,
+        reasons: ruleReasons.length ? ruleReasons : ["Sin condiciones de regla cumplidas (bull " + sig.bullScore + " / bear " + sig.bearScore + ")"],
+      };
+    }
+  }
+  const why = sig.kind === "WAIT"
+    ? "Hay condiciones parciales pero la puntuación aún no supera el umbral."
+    : sig.kind === "INSUFFICIENT_DATA"
+      ? "Faltan velas cerradas para evaluar (se necesitan 220+)."
+      : sig.kind === "DATA_ERROR"
+        ? "No se pudieron obtener datos del proveedor."
+        : "Ninguna dirección supera los umbrales de confluencia del motor.";
+  return {
+    tone: "neutral",
+    title: "ESPERAR",
+    note: `${why}${pred ? " El ML tampoco muestra margen claro (|P↑ − P↓| < 8 pts)." : ""}`,
+    reasons: ruleReasons,
+  };
+}
+
+function ActionPlanCard({
+  signal: data,
+  prediction,
+  projection,
+}: {
+  signal: AnalysisResponse;
+  prediction: AvailablePrediction | null;
+  projection: ReturnType<typeof buildProjection>;
+}) {
+  const plan = planFor(data, prediction);
+  const toneClass =
+    plan.tone === "up" ? "border-up/50 text-up" : plan.tone === "down" ? "border-down/50 text-down" : "border-border-subtle text-foreground";
+  return (
+    <Card title="Plan de acción (motor de reglas + modelo ML)">
+      <div className="flex flex-wrap items-center gap-3">
+        <span className={`rounded-lg border px-4 py-2 text-lg font-bold tracking-wide ${toneClass}`}>
+          {plan.title}
+        </span>
+        {projection && (
+          <Badge tone={projection.scenario === "up" ? "up" : projection.scenario === "down" ? "down" : "neutral"}>
+            Escenario {projection.scenario === "up" ? "alcista" : projection.scenario === "down" ? "bajista" : "lateral"}{" "}
+            {fmtNum(projection.expectedMovePercent, 2)} % en {projection.horizon} velas
+          </Badge>
+        )}
+      </div>
+      <p className="mt-2 text-sm">{plan.note}</p>
+      {plan.reasons.length > 0 && (
+        <ul className="mt-2 list-disc space-y-0.5 pl-5 text-xs text-muted">
+          {plan.reasons.map((r, i) => (
+            <li key={i}>{r}</li>
+          ))}
+        </ul>
+      )}
+      {projection && (
+        <p className="mt-3 text-[11px] text-muted">
+          En el gráfico, las líneas punteadas muestran un cono hipotético: trayectoria central = deriva de
+          {` ${(projection.edge * 100).toFixed(0)} pts de margen del modelo × ATR `}
+          ({fmtNum(data.snapshot?.atrPct ?? 0, 2)} % por vela); bandas = ±ATR·√k. Movimiento esperado{" "}
+          {fmtNum(projection.expectedMovePercent, 2)} % y banda ±{fmtNum(projection.bandPercentAtHorizon, 2)} % al final
+          del horizonte. Es un escenario ilustrativo calibrado con volatilidad observada, NO un precio previsto ni una garantía.
+        </p>
+      )}
+    </Card>
   );
 }
 
@@ -282,12 +417,13 @@ const PROB_ROWS = [
   { key: "down", label: "Bajada", bar: "bg-down", text: "text-down" },
 ] as const;
 
-function PredictionPanel({ symbol, interval }: { symbol: string; interval: string }) {
-  const { data, loading } = useApi<PredictionApiResponse>(
-    `/api/prediction?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}`,
-    120_000,
-  );
-
+function PredictionPanel({
+  data,
+  loading,
+}: {
+  data: PredictionApiResponse | null;
+  loading: boolean;
+}) {
   return (
     <Card title="Predicción (modelo ML)">
       {loading && !data ? (
